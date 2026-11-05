@@ -153,3 +153,20 @@ def test_recovery_redacts_generated_credentials(tmp_path, monkeypatch):
         core.add("postgres", tmp_path / "compose.yml")
     assert "unique-generated-secret" not in str(error.value)
     assert "[redacted]" in str(error.value)
+
+
+@pytest.mark.parametrize("target_name", ["compose.yml", ".env", ".env.example", "nginx/nginx.conf"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_add_rejects_dangling_target_symlinks_before_writes(tmp_path, target_name, dry_run):
+    target = tmp_path / target_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    missing = tmp_path / "missing-target"
+    target.symlink_to(missing)
+    service = "nginx-proxy" if target_name.startswith("nginx/") else "postgres"
+    with pytest.raises(core.RdtError, match="dangling symlink"):
+        core.add(service, tmp_path / "compose.yml", dry_run=dry_run)
+    assert target.is_symlink()
+    assert not missing.exists()
+    if target_name != "compose.yml":
+        assert not (tmp_path / "compose.yml").exists()
+    assert not (tmp_path / ".env").exists()

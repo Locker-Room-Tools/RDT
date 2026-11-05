@@ -231,3 +231,41 @@ def test_stdio_mcp_preview_schemas_and_readonly_results(tmp_path: Path) -> None:
 
     asyncio.run(exercise())
     assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("operation", ["init", "remove"])
+@pytest.mark.parametrize("environment", ["mapping", "list"])
+def test_preview_redacts_secrets_from_original_compose(tmp_path: Path, operation: str, environment: str) -> None:
+    file = tmp_path / "compose.yml"
+    secret = "known-secret-9ee04c"
+    assignment = (f"      POSTGRES_PASSWORD: {secret}\n" if environment == "mapping"
+                  else f"      - POSTGRES_PASSWORD={secret}\n")
+    file.write_text(f"services:\n  postgres:\n    image: {secret}\n    environment:\n" + assignment)
+    before = file.read_bytes()
+    result = (core.init(file, force=True, dry_run=True) if operation == "init"
+              else core.remove("postgres", file, dry_run=True))
+    serialized = json.dumps(result.as_dict())
+    assert secret not in serialized
+    assert "<redacted>" in serialized
+    assert file.read_bytes() == before
+
+
+def test_force_init_preview_accepts_invalid_compose(tmp_path: Path) -> None:
+    file = tmp_path / "compose.yml"
+    file.write_text("services: [invalid\n")
+    result = core.init(file, force=True, dry_run=True)
+    assert result.operation == "init"
+    core.init(file, force=True)
+
+
+def test_remove_without_matching_env_keys_preserves_bytes(tmp_path: Path) -> None:
+    file = tmp_path / "compose.yml"
+    core.add("postgres", file)
+    env = tmp_path / ".env"
+    original = b"OTHER=keep\n\n\n"
+    env.write_bytes(original)
+    preview = core.remove("postgres", file, clean_env=True, dry_run=True)
+    assert next(a for a in preview.actions if a.path == str(env)).action == "skip"
+    core.remove("postgres", file, clean_env=True)
+    assert env.read_bytes() == original
+

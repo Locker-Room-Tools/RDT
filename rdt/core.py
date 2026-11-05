@@ -200,7 +200,18 @@ def init(file: Path, force: bool = False, *, dry_run: bool = False) -> InitResul
 
     data = make_base_compose()
     if dry_run:
-        builder = PreviewBuilder("init", project_root, known_secrets(project_root))
+        secrets = known_secrets(project_root)
+        if file.is_file():
+            # Forced initialization can replace invalid YAML, so an unreadable
+            # Compose structure must not make the preview less permissive.
+            from ruamel.yaml.error import YAMLError
+            try:
+                existing_data = load_compose(file)
+            except YAMLError:
+                existing_data = None
+            if isinstance(existing_data, dict):
+                secrets |= known_secrets(project_root, existing_data)
+        builder = PreviewBuilder("init", project_root, secrets)
         builder.file(file, render_compose(data))
         builder.environment(env_file, {}, create_empty=True)
         builder.environment(env_example, {}, create_empty=True)
@@ -384,6 +395,12 @@ def _prepare_add(
                 + "; ".join(f"{i.artifact_path}: {i.reason}" for i in issues)
             )
         artifact_plans = pipeline.plan()
+
+    targets = [file, env_file, env_example]
+    targets.extend(plan.target for plan in artifact_plans if plan.action in ("create", "overwrite"))
+    for target in targets:
+        if target.is_symlink() and not target.exists():
+            raise RdtError(f"Cannot add service: dangling symlink target: {target}")
 
     return PreparedAddition(data, env_values, scaffold_pipeline, scaffold_plans, pipeline, artifact_plans)
 
@@ -589,9 +606,10 @@ def remove(
     orphaned_vars = find_orphaned_vars(data, service) if clean_env else set()
     artifact_paths = _get_artifact_paths(service, project_root) if clean_artifacts else []
 
+    secrets = known_secrets(project_root, data) if dry_run else set()
     data, removed_volumes = remove_service(data, service)
     if dry_run:
-        builder = PreviewBuilder("remove", project_root, known_secrets(project_root, data))
+        builder = PreviewBuilder("remove", project_root, secrets)
         builder.file(file, render_compose(data))
         if clean_env and orphaned_vars:
             builder.environment(env_file, {}, remove=orphaned_vars)

@@ -207,6 +207,9 @@ def remove_vars_from_env_file(env_path: Path, vars_to_remove: set[str]) -> int:
                 continue
         new_lines.append(line)
 
+    if not removed:
+        return 0
+
     # Remove trailing blank lines added by write_env.
     content = "".join(new_lines).rstrip("\n") + "\n" if new_lines else ""
     env_path.write_text(content, encoding="utf-8")
