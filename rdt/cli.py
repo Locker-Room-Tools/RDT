@@ -6,7 +6,7 @@ Responsibilities: argument parsing, interactive wizard, and Rich output.
 All business logic is delegated to rdt.core.
 """
 from __future__ import annotations
-from importlib.metadata import version
+from rdt.version import get_version
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
@@ -49,7 +49,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"rdt {version('locker-room-tolls-rdt')}")
+        console.print(f"rdt {get_version()}")
         raise typer.Exit()
 
 console = Console()

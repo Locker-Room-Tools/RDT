@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "locker-room-tolls-rdt"
-version = "2.1.1"
+name = "rdt-rambo"
+dynamic = ["version"]
 description = "Rambo Docker Tools — CLI for docker-compose generation"
 readme = "README.md"
 license = "MIT"
@@ -37,8 +37,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = ["pytest>=7", "build>=1"]
 mcp = [
-    "mcp[cli]>=1.0",
+    "mcp[cli]>=1.0,<2",
 ]
 
 [project.urls]
@@ -53,6 +54,9 @@ rdt-mcp = "rdt.mcp_server:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["rdt*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "rdt.__version__"}
 
 [tool.setuptools.package-data]
 rdt = ["locales/*.json", "presets/*.json", "templates/**/*"]
