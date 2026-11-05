@@ -67,6 +67,7 @@ def test_stdio_mcp_compose_and_recovery(tmp_path: Path) -> None:
     compose.touch()
     docker = tmp_path / "docker"
     docker.write_text(f"#!{sys.executable}\nimport sys, time\n"
+                      "print('stdin empty' if sys.stdin.read() == '' else 'stdin data', flush=True)\n"
                       "print('docker stdout', flush=True)\n"
                       "print('docker stderr', file=sys.stderr, flush=True)\n"
                       "if 'config' in sys.argv: sys.exit(9)\n"
@@ -88,9 +89,10 @@ def test_stdio_mcp_compose_and_recovery(tmp_path: Path) -> None:
                     return response.structuredContent or json.loads(response.content[0].text)
 
                 args = {"file": str(compose)}
-                ok = await call("rdt_up", **args)
+                ok = await call("rdt_up", **args, timeout_seconds=2)
                 assert ok["status"] == "ok" and "docker stdout" in ok["stdout"]
                 assert "docker stderr" in ok["stderr"]
+                assert "stdin empty" in ok["stdout"]
                 assert (await call("rdt_list"))
                 failed = await call("rdt_check", **args)
                 assert failed["code"] == "command_failed" and failed["returncode"] == 9

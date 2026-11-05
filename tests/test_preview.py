@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from pathlib import Path
 import subprocess
 from typing import Any
@@ -191,3 +192,42 @@ def test_preview_locale_keys_match() -> None:
     english = json.loads((locale_root / "en.json").read_text())
     russian = json.loads((locale_root / "ru.json").read_text())
     assert {k for k in english if k.startswith("preview.")} == {k for k in russian if k.startswith("preview.")}
+
+
+def test_stdio_mcp_preview_schemas_and_readonly_results(tmp_path: Path) -> None:
+    import os
+    import sys
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    existing = tmp_path / "existing"
+    core.add("postgres", existing / "compose.yml")
+    before = snapshot(tmp_path)
+
+    async def exercise() -> None:
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
+        params = StdioServerParameters(command=sys.executable, args=["-m", "rdt.mcp_server"], env=env)
+        async with stdio_client(params) as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                schemas = {tool.name: tool.inputSchema for tool in (await session.list_tools()).tools}
+                for name in ("rdt_init", "rdt_add", "rdt_remove"):
+                    assert schemas[name]["properties"]["dry_run"]["default"] is False
+                calls = [
+                    ("rdt_init", {"project_dir": str(tmp_path / "new-init")}),
+                    ("rdt_add", {"service": "postgres", "hardcore": True,
+                                 "project_dir": str(tmp_path / "new-add")}),
+                    ("rdt_remove", {"service": "postgres", "project_dir": str(existing),
+                                    "clean_env": True}),
+                ]
+                for name, arguments in calls:
+                    response = await session.call_tool(name, {**arguments, "dry_run": True})
+                    assert not response.isError
+                    result = response.structuredContent or json.loads(response.content[0].text)
+                    assert result["status"] == "ok" and result["dry_run"] is True
+                    assert result["actions"]
+                    assert "env_vars" not in result
+                assert not (await session.call_tool("rdt_list", {})).isError
+
+    asyncio.run(exercise())
+    assert snapshot(tmp_path) == before
