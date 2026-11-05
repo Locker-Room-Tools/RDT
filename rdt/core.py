@@ -8,6 +8,7 @@ Errors are raised as RdtError.
 from __future__ import annotations
 
 import subprocess
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ from rdt.env_manager import (
     get_env_values, write_env, write_env_example,
     find_orphaned_vars, remove_vars_from_env_file,
 )
-from rdt.wizard import build_script_answers
+from rdt.answers import build_script_answers
 from rdt.artifacts import (
     ArtifactContext, ArtifactPipeline, ArtifactResult,
     ScaffoldPipeline, ScaffoldResult,
@@ -300,42 +301,66 @@ def _apply_add(
             )
         artifact_plans = pipeline.plan()
 
-    # Snapshots for rollback.
-    compose_snapshot: str | None = file.read_text(encoding="utf-8") if file.exists() else None
-    env_existed = env_file.exists()
-    env_snapshot: str | None = env_file.read_text(encoding="utf-8") if env_existed else None
-    env_ex_existed = env_example.exists()
-    env_ex_snapshot: str | None = env_example.read_text(encoding="utf-8") if env_ex_existed else None
-
-    # ── Write to disk ─────────────────────────────────────────────────────────
-    save_compose(file, data)
-    write_env(env_file, env_values)
-    write_env_example(env_example, env_values)
+    # Snapshot all planned targets before the first mutation, including targets
+    # whose writes may fail partway through.
+    targets = [file, env_file, env_example]
+    targets.extend(p.target for p in artifact_plans if p.action in ("create", "overwrite"))
+    journal: dict[Path, tuple[bytes, int] | None] = {}
+    directories: set[Path] = set()
+    for target in targets:
+        if target not in journal:
+            journal[target] = (target.read_bytes(), stat.S_IMODE(target.stat().st_mode)) if target.exists() else None
+        parent = target.parent
+        while not parent.exists():
+            directories.add(parent)
+            parent = parent.parent
+    for plan in scaffold_plans:
+        parent = plan.target
+        while not parent.exists():
+            directories.add(parent)
+            parent = parent.parent
 
     scaffold_results: list[ScaffoldResult] = []
     artifact_results: list[ArtifactResult] = []
-
-    if scaffold_pipeline is not None:
-        scaffold_results = scaffold_pipeline.apply(scaffold_plans)
-        if ScaffoldPipeline.has_errors(scaffold_results):
-            _rollback(
-                file, compose_was_new, compose_snapshot,
-                env_file, env_existed, env_snapshot,
-                env_example, env_ex_existed, env_ex_snapshot,
-                scaffold_results, artifact_results,
-            )
-            raise RdtError(f"Scaffold error for '{svc_key}'. Changes rolled back.")
-
-    if pipeline is not None:
-        artifact_results = pipeline.apply(artifact_plans)
-        if ArtifactPipeline.has_errors(artifact_results):
-            _rollback(
-                file, compose_was_new, compose_snapshot,
-                env_file, env_existed, env_snapshot,
-                env_example, env_ex_existed, env_ex_snapshot,
-                scaffold_results, artifact_results,
-            )
-            raise RdtError(f"Artifact error for '{svc_key}'. Changes rolled back.")
+    try:
+        save_compose(file, data)
+        write_env(env_file, env_values)
+        write_env_example(env_example, env_values)
+        if scaffold_pipeline is not None:
+            scaffold_results = scaffold_pipeline.apply(scaffold_plans)
+            failures = [r for r in scaffold_results if r.has_error]
+            if failures:
+                raise RuntimeError("Scaffold error: " + "; ".join(f"{r.path}: {r.error}" for r in failures))
+        if pipeline is not None:
+            artifact_results = pipeline.apply(artifact_plans)
+            failures = [r for r in artifact_results if r.has_error]
+            if failures:
+                raise RuntimeError("Artifact error: " + "; ".join(f"{r.path}: {r.error}" for r in failures))
+    except Exception as exc:
+        recovery_errors = []
+        for path, snapshot in reversed(list(journal.items())):
+            try:
+                if snapshot is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    content, mode = snapshot
+                    path.write_bytes(content)
+                    path.chmod(mode)
+            except Exception as recovery_exc:
+                recovery_errors.append(f"{path}: {type(recovery_exc).__name__}")
+        for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
+            try:
+                if directory.is_dir() and not any(directory.iterdir()):
+                    directory.rmdir()
+            except Exception as recovery_exc:
+                recovery_errors.append(f"{directory}: {type(recovery_exc).__name__}")
+        reason = str(exc)
+        for value in env_values.values():
+            if value:
+                reason = reason.replace(str(value), "[redacted]")
+        outcome = ("Recovery incomplete: " + "; ".join(recovery_errors)
+                   if recovery_errors else "Changes restored.")
+        raise RdtError(f"Add failed: {reason}. {outcome}") from exc
 
     return AddResult(
         service=svc_key,

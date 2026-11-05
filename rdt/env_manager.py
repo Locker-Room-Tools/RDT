@@ -7,6 +7,8 @@ import secrets
 import string
 from pathlib import Path
 
+from rdt.file_utils import atomic_write
+
 # Regex for extracting variable names from ${VAR_NAME} in any context.
 _VAR_PATTERN = re.compile(r'\$\{([^}]+)\}')
 
@@ -124,10 +126,9 @@ def write_env(env_path: Path, values: dict[str, str]) -> None:
     if not new_vars:
         return
 
-    with env_path.open("a", encoding="utf-8") as f:
-        f.write("\n")
-        for k, v in new_vars.items():
-            f.write(f"{k}={v}\n")
+    original = env_path.read_bytes() if env_path.exists() else b""
+    addition = "\n" + "".join(f"{k}={v}\n" for k, v in new_vars.items())
+    atomic_write(env_path, original + addition.encode("utf-8"))
 
 
 def extract_vars_from_text(text: str) -> set[str]:
@@ -222,8 +223,7 @@ def write_env_example(example_path: Path, values: dict[str, str]) -> None:
     if not new_vars:
         return
 
-    with example_path.open("a", encoding="utf-8") as f:
-        f.write("\n")
-        for k in new_vars:
-            f.write(f"{k}=\n")
+    original = example_path.read_bytes() if example_path.exists() else b""
+    addition = "\n" + "".join(f"{k}=\n" for k in new_vars)
+    atomic_write(example_path, original + addition.encode("utf-8"))
 
