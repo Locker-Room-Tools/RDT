@@ -361,3 +361,7 @@ rdt check
 # 7. Start the stack
 rdt up
 ```
+
+A failed `add` restores the original bytes and permissions of changed files and removes newly created files and empty directories where possible. If recovery is incomplete, the error lists affected paths. Recovery is best effort; process crashes and concurrent writers are outside this guarantee.
+
+Programmatic noninteractive answer preparation lives in `rdt.answers`. The shared core and interactive wizard both use this module; the wizard continues to provide interactive prompts and re-exports `build_script_answers` for compatibility.

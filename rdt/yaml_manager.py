@@ -9,6 +9,7 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from rdt.file_utils import atomic_write
 from rdt.strategies.base import NETWORK_NAME
 
 DEFAULT_COMPOSE_FILE = "docker-compose.yml"
@@ -75,8 +76,7 @@ def save_compose(path: Path, data: CommentedMap) -> None:
     y.dump(data, buf)
     # Normalize accumulated blank lines: ≥3 newlines → exactly 2 (= one blank line).
     content = re.sub(r'\n{3,}', '\n\n', buf.getvalue())
-    with path.open("w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write(path, content.encode("utf-8"))
 
 
 def make_base_compose(network_config: dict | None = None) -> CommentedMap:

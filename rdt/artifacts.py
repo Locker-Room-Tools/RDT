@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+from rdt.file_utils import atomic_write
 from typing import Any, Callable, Literal
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
@@ -315,7 +317,7 @@ class ArtifactPipeline:
                 try:
                     content = self._render(plan.artifact)
                     plan.target.parent.mkdir(parents=True, exist_ok=True)
-                    plan.target.write_text(content, encoding="utf-8")
+                    atomic_write(plan.target, content.encode("utf-8"))
                     status = "overwritten" if plan.action == "overwrite" else "created"
                     results.append(ArtifactResult(path=plan.target, status=status))
                 except TemplateNotFound as exc:
