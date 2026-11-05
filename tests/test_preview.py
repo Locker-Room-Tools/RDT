@@ -268,4 +268,3 @@ def test_remove_without_matching_env_keys_preserves_bytes(tmp_path: Path) -> Non
     assert next(a for a in preview.actions if a.path == str(env)).action == "skip"
     core.remove("postgres", file, clean_env=True)
     assert env.read_bytes() == original
-

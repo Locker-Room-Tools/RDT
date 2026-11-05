@@ -4,7 +4,7 @@
 
 ```bash
 # Install for development (editable, from repo root)
-pip install -e ".[mcp]"
+pip install -e ".[dev,mcp]"
 
 # Run all tests (pytest auto-discovers tests/)
 pytest
@@ -19,9 +19,9 @@ pytest -v
 python -m build
 ```
 
-**No linter, formatter, typechecker, or pre-commit config exists.** There is no Makefile, tox, nox, ruff config, mypy config, or CI workflows. Only `pytest` is used.
+**No linter, formatter, typechecker, or pre-commit config exists.** Verification uses pytest and isolated package builds. `.github/workflows/verify.yml` runs source tests on Python 3.10 and 3.14 and a clean-wheel smoke check; it does not publish packages.
 
-## Package Name Confusion (Critical)
+## Package Identity and Version
 
 | Purpose | Name |
 |---|---|
@@ -59,7 +59,11 @@ cli.py  ──→  core.py  ──→  strategies/  ──→  yaml_manager.py
 |---|---|
 | `cli.py` | 8 Typer commands, `--version`, `--help`, interactive menu |
 | `core.py` | Pure business logic, orchestration, rollback |
-| `wizard.py` | Interactive questionary prompts, smart mapping, `build_script_answers()` |
+| `wizard.py` | Interactive questionary prompts; compatibility re-export of `build_script_answers()` |
+| `answers.py` | UI-independent script defaults, smart mapping, and `PreparedAnswers` contract |
+| `preview.py` | Read-only change summaries, text diffs, env-key actions, and credential redaction |
+| `file_utils.py` | Atomic sibling-file replacement preserving existing permission modes |
+| `version.py` | Canonical/legacy distribution lookup with source version fallback |
 | `strategies/` | Polymorphic builder classes (database, web_server, monitoring, admin_tool, traefik, base) |
 | `yaml_manager.py` | ruamel.yaml read/write, healthcheck `test` inline-flow normalization |
 | `env_manager.py` | `.env` / `.env.example` generation, random password generation |
@@ -85,7 +89,7 @@ When `--file` is omitted (or is the literal default `docker-compose.yml`), `_res
 ### Healthcheck YAML Serialization
 `yaml_manager.py` normalizes healthcheck `test` arrays to inline flow style (`test: [CMD-SHELL, ...]`). If you manually add block-style `test:`, `save_compose()` will convert it.
 
-### `--version` Uses `importlib.metadata`, Not `rdt.__version__`
+### Version Reporting
 `rdt --version` uses the shared lookup in `rdt/version.py`. Update only
 `rdt/__init__.py` when releasing; setuptools reads that version for metadata.
 
@@ -100,7 +104,19 @@ The `rdt-mcp` entry point exposes 7 tools: `rdt_init`, `rdt_add`, `rdt_remove`, 
 
 ## Testing
 
-- **Single test file:** `tests/test_artifact_pipeline.py` (70+ tests, ~1800 lines)
-- Tests use `tmp_path` fixture — **no Docker required**
-- Coverage is sparse: artifact pipeline, rollback, YAML serialization, smart mapping, strategies, templates are tested. `core.init()`, `core.remove()`, `core.up()`, `core.check()`, `core.doctor()`, `wizard.py`, `env_manager.py`, `port_utils.py`, `mcp_server.py`, `i18n.py`, and `cli.py` have **little to no test coverage**.
-- One CLI integration test uses `typer.testing.CliRunner`
+- `tests/test_artifact_pipeline.py`: original artifact, scaffold, strategy, template, mapping, and YAML tests.
+- `tests/test_add_transaction.py`: fault injection, byte/mode recovery, atomic replacement, and dangling symlinks.
+- `tests/test_headless_answers.py`: UI import isolation and preparation/output compatibility.
+- `tests/test_mcp_compose_execution.py`: captured process results, deadlines, cleanup, stdin isolation, and real stdio MCP tests with fake Docker.
+- `tests/test_preview.py`: read-only preview, secret redaction, CLI behavior, and real MCP schemas/results.
+- `tests/test_public_workflows.py` and `tests/test_version.py`: public workflow baselines and distribution/version lookup.
+- Tests use temporary files and simulated external processes; no Docker daemon is required.
+- Run `python -m build`, then `python scripts/smoke_wheel.py dist/<wheel>.whl` for an isolated wheel installation check. This check needs dependency downloads.
+
+## Project Mutation and MCP Behavior
+
+- `init`, `add`, and `remove` support CLI `--dry-run` and MCP `dry_run=True`; previews never write project files or launch Docker and do not prompt.
+- Preview env output shows key actions and credential placeholders, never env values. Known secrets are redacted from file diffs; arbitrary unknown user-authored secrets still need manual review before sharing.
+- Add snapshots planned files before writing and performs best-effort rollback on handled errors. Incomplete recovery names paths; process crashes and concurrent writers remain outside the guarantee.
+- MCP up/check capture child output, disconnect child stdin from the protocol, and use a positive `timeout_seconds` (default 120). Timeout cleanup does not undo container side effects.
+- CLI foreground startup retains terminal streaming and has no MCP deadline.

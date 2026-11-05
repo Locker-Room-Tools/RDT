@@ -673,5 +673,3 @@ def ask_remove_service_choice(existing_services: list[str]) -> str | None:
     ).ask()
 
     return selected
-
-
