@@ -6,6 +6,7 @@ Responsibilities: argument parsing, interactive wizard, and Rich output.
 All business logic is delegated to rdt.core.
 """
 from __future__ import annotations
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
@@ -43,6 +44,12 @@ app = typer.Typer(
     help=t("app.help"),
     rich_markup_mode="rich",
 )
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"rdt {version('locker-room-tolls-rdt')}")
+        raise typer.Exit()
+
 console = Console()
 
 COMPOSE_FILE = Path(DEFAULT_COMPOSE_FILE)
@@ -61,7 +68,18 @@ def _resolve_cli_compose_file(file: Path) -> Path:
 # Callback — starts the interactive menu when rdt is run without arguments
 # ─────────────────────────────────────────────────────────────────────────────
 @app.callback(invoke_without_command=True, help=t("app.callback_help"))
-def main(ctx: typer.Context) -> None:
+def main(
+    ctx: typer.Context,
+    show_version: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--version",
+            help=t("app.opt_version"),
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = None,
+) -> None:
     if ctx.invoked_subcommand is None:
         _run_interactive(ctx)
 
@@ -323,13 +341,15 @@ def check(
     file = _resolve_cli_compose_file(file)
     console.print(t("msg.check_running", file=file))
     try:
-        result = core_check(file)
+        result = core_check(file, verbose=verbose)
     except RdtError as e:
         console.print(str(e))
         raise typer.Exit(1)
 
     if result.valid:
         console.print(t("msg.check_ok", file=file))
+        if verbose and result.config:
+            console.print(result.config)
     else:
         if result.error:
             console.print(result.error)
