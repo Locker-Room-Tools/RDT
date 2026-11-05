@@ -1,5 +1,6 @@
 {
   "app.help": "[bold cyan]Rambo Docker Tools[/] — генератор docker-compose.yml",
+  "app.opt_version": "Показать версию и выйти.",
   "app.callback_help": "[bold cyan]Rambo Docker Tools[/] — генератор docker-compose.yml\n\nЗапустите [green]rdt[/] без аргументов для интерактивного меню\nили используйте подкоманды напрямую.",
 
   "cmd.init.help": "Создать базовый docker-compose.yml с сетью rambo-net.",

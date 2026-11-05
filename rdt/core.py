@@ -88,6 +88,7 @@ class DoctorResult:
 class ComposeCheckResult:
     valid: bool
     error: str | None = None
+    config: str | None = None
 
 
 @dataclass
@@ -520,7 +521,7 @@ def doctor(file: Path) -> DoctorResult:
 # core_check
 # ─────────────────────────────────────────────────────────────────────────────
 
-def check(file: Path) -> ComposeCheckResult:
+def check(file: Path, verbose: bool = False) -> ComposeCheckResult:
     """Validate docker-compose.yml through docker compose config."""
     if not file.exists():
         raise RdtError(f"Compose file not found: {file}")
@@ -530,7 +531,10 @@ def check(file: Path) -> ComposeCheckResult:
         capture_output=True, text=True,
     )
     if result.returncode == 0:
-        return ComposeCheckResult(valid=True)
+        return ComposeCheckResult(
+            valid=True,
+            config=result.stdout.strip() if verbose else None,
+        )
     return ComposeCheckResult(valid=False, error=result.stderr.strip() or result.stdout.strip())
 
 
