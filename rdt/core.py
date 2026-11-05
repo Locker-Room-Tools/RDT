@@ -23,7 +23,7 @@ from rdt.strategies.factory import get_strategy
 from rdt.yaml_manager import (
     load_compose, save_compose, make_base_compose, inject_service,
     get_existing_services, get_services_with_healthcheck,
-    get_dependents, remove_service,
+    get_dependents, remove_service, render_compose,
 )
 from rdt.env_manager import (
     get_env_values, write_env, write_env_example,
@@ -35,6 +35,7 @@ from rdt.artifacts import (
     ScaffoldPipeline, ScaffoldResult,
 )
 from rdt.doctor import run_all_checks
+from rdt.preview import PreviewBuilder, PreviewResult, known_secrets, redact
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Exception
@@ -187,7 +188,7 @@ def _get_artifact_paths(service_name: str, project_root: Path) -> list[Path]:
 # core_init
 # ─────────────────────────────────────────────────────────────────────────────
 
-def init(file: Path, force: bool = False) -> InitResult:
+def init(file: Path, force: bool = False, *, dry_run: bool = False) -> InitResult | PreviewResult:
     """Create base docker-compose.yml, .env, and .env.example files."""
     if file.exists() and not force:
         raise RdtError(f"File already exists: {file}. Use force=True to overwrite.")
@@ -197,6 +198,12 @@ def init(file: Path, force: bool = False) -> InitResult:
     env_example = project_root / ".env.example"
 
     data = make_base_compose()
+    if dry_run:
+        builder = PreviewBuilder("init", project_root, known_secrets(project_root))
+        builder.file(file, render_compose(data))
+        builder.environment(env_file, {}, create_empty=True)
+        builder.environment(env_example, {}, create_empty=True)
+        return builder.result
     save_compose(file, data)
 
     created = [str(file)]
@@ -230,7 +237,8 @@ def add(
     hc_retries: int | None = None,
     hc_start_period: str | None = None,
     set_vars: dict[str, str] | None = None,
-) -> AddResult:
+    dry_run: bool = False,
+) -> AddResult | PreviewResult:
     """Add a service to docker-compose.yml in script/MCP mode."""
     service = service.lower()
     preset = ALL_PRESETS.get(service)
@@ -270,6 +278,8 @@ def add(
         answers.update(set_vars)
     answers["services_with_healthcheck"] = svc_with_hc
 
+    if dry_run:
+        return _preview_add(preset, answers, file, hardcore)
     return _apply_add(preset, answers, file, hardcore=hardcore)
 
 
@@ -296,13 +306,20 @@ def add_from_answers(
     return _apply_add(preset, answers, file, hardcore=hardcore)
 
 
-def _apply_add(
-    preset: Any,
-    answers: dict[str, Any],
-    file: Path,
-    hardcore: bool,
-) -> AddResult:
-    """Apply answers to compose/env/artifacts through the shared apply path."""
+@dataclass
+class PreparedAddition:
+    data: Any
+    env_values: dict[str, str]
+    scaffold_pipeline: ScaffoldPipeline | None
+    scaffold_plans: list[Any]
+    pipeline: ArtifactPipeline | None
+    artifact_plans: list[Any]
+
+
+def _prepare_add(
+    preset: Any, answers: dict[str, Any], file: Path, hardcore: bool, *, preview: bool = False,
+) -> PreparedAddition:
+    """Prepare and validate add targets without mutating the filesystem."""
     svc_key = preset.name
     project_root = _resolve_root(file)
     env_file = project_root / ".env"
@@ -323,6 +340,7 @@ def _apply_add(
     env_values = get_env_values(
         preset.default_env,
         hardcore=hardcore or not answers.get("use_default_creds", True),
+        preview=preview,
     )
 
     strategy = get_strategy(preset, answers)
@@ -366,6 +384,48 @@ def _apply_add(
             )
         artifact_plans = pipeline.plan()
 
+    return PreparedAddition(data, env_values, scaffold_pipeline, scaffold_plans, pipeline, artifact_plans)
+
+
+def _preview_add(preset: Any, answers: dict[str, Any], file: Path, hardcore: bool) -> PreviewResult:
+    root = _resolve_root(file)
+    secrets = known_secrets(root, answers)
+    try:
+        prepared = _prepare_add(preset, answers, file, hardcore, preview=True)
+        secrets |= known_secrets(root, prepared.env_values, prepared.data)
+        builder = PreviewBuilder("add", root, secrets)
+        builder.file(file, render_compose(prepared.data))
+        builder.environment(root / ".env", prepared.env_values)
+        builder.environment(root / ".env.example", prepared.env_values)
+        for plan in prepared.scaffold_plans:
+            builder.directory(plan.target)
+        for plan in prepared.artifact_plans:
+            if plan.action == "error":
+                raise RdtError(plan.error or "Invalid artifact plan")
+            content = None if plan.action == "skip" else prepared.pipeline._render(plan.artifact)
+            builder.file(plan.target, content, skip=plan.action == "skip")
+        return builder.result
+    except Exception as exc:
+        raise RdtError(redact(str(exc), secrets)) from exc
+
+
+def _apply_add(
+    preset: Any,
+    answers: dict[str, Any],
+    file: Path,
+    hardcore: bool,
+) -> AddResult:
+    """Apply answers to compose/env/artifacts through the shared apply path."""
+    svc_key = preset.name
+    project_root = _resolve_root(file)
+    env_file = project_root / ".env"
+    env_example = project_root / ".env.example"
+    compose_was_new = not file.exists()
+    prepared = _prepare_add(preset, answers, file, hardcore)
+    data, env_values = prepared.data, prepared.env_values
+    scaffold_pipeline, scaffold_plans = prepared.scaffold_pipeline, prepared.scaffold_plans
+    pipeline, artifact_plans = prepared.pipeline, prepared.artifact_plans
+
     # Snapshot all planned targets before the first mutation, including targets
     # whose writes may fail partway through.
     targets = [file, env_file, env_example]
@@ -384,6 +444,7 @@ def _apply_add(
         while not parent.exists():
             directories.add(parent)
             parent = parent.parent
+
 
     scaffold_results: list[ScaffoldResult] = []
     artifact_results: list[ArtifactResult] = []
@@ -503,7 +564,8 @@ def remove(
     *,
     clean_env: bool = False,
     clean_artifacts: bool = False,
-) -> RemoveResult:
+    dry_run: bool = False,
+) -> RemoveResult | PreviewResult:
     """Remove a service from docker-compose.yml."""
     if not file.exists():
         raise RdtError(f"Compose file not found: {file}")
@@ -527,6 +589,16 @@ def remove(
     artifact_paths = _get_artifact_paths(service, project_root) if clean_artifacts else []
 
     data, removed_volumes = remove_service(data, service)
+    if dry_run:
+        builder = PreviewBuilder("remove", project_root, known_secrets(project_root, data))
+        builder.file(file, render_compose(data))
+        if clean_env and orphaned_vars:
+            builder.environment(env_file, {}, remove=orphaned_vars)
+            builder.environment(env_example, {}, remove=orphaned_vars)
+        for path in artifact_paths:
+            builder.delete_path(path)
+        builder.result.warnings = [f"Service '{dependent}' depends on '{service}'." for dependent in dependents]
+        return builder.result
     save_compose(file, data)
 
     cleaned_vars: list[str] = []

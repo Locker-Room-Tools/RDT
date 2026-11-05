@@ -66,17 +66,20 @@ def load_compose(path: Path) -> CommentedMap:
 
 def save_compose(path: Path, data: CommentedMap) -> None:
     """Save docker-compose.yml and create the parent directory when needed."""
-    import re
-    import io
-    # Ensure the parent directory exists for --file infra/docker-compose.yml.
     path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, render_compose(data).encode("utf-8"))
+
+
+def render_compose(data: CommentedMap) -> str:
+    """Serialize Compose identically for preview and writing, without disk access."""
+    import io
+    import re
+
     _normalize_healthcheck_test_flow_style(data)
-    y = _make_yaml()
     buf = io.StringIO()
-    y.dump(data, buf)
-    # Normalize accumulated blank lines: ≥3 newlines → exactly 2 (= one blank line).
-    content = re.sub(r'\n{3,}', '\n\n', buf.getvalue())
-    atomic_write(path, content.encode("utf-8"))
+    _make_yaml().dump(data, buf)
+    return re.sub(r'\n{3,}', '\n\n', buf.getvalue())
+
 
 
 def make_base_compose(network_config: dict | None = None) -> CommentedMap:

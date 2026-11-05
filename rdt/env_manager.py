@@ -91,7 +91,7 @@ def _fallback_value(var_name: str) -> str:
     return "app"
 
 
-def get_env_values(preset_env: dict[str, str], hardcore: bool) -> dict[str, str]:
+def get_env_values(preset_env: dict[str, str], hardcore: bool, *, preview: bool = False) -> dict[str, str]:
     """
     Return concrete values for .env variables.
     Uses a regex to safely extract variable names from any context.
@@ -102,7 +102,9 @@ def get_env_values(preset_env: dict[str, str], hardcore: bool) -> dict[str, str]
         for var_name in _VAR_PATTERN.findall(str(placeholder)):
             if var_name in result:
                 continue
-            if hardcore:
+            if preview and is_secret_key(var_name):
+                result[var_name] = "<generated>" if hardcore else "<redacted>"
+            elif hardcore:
                 result[var_name] = (
                     generate_password() if is_secret_key(var_name)
                     else SERVICE_DEFAULTS.get(var_name, _fallback_value(var_name))

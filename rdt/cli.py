@@ -10,6 +10,8 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
+from rdt.preview import PreviewResult
+
 import questionary
 import typer
 from rich.console import Console
@@ -53,6 +55,19 @@ def _version_callback(value: bool) -> None:
 console = Console()
 
 COMPOSE_FILE = Path(DEFAULT_COMPOSE_FILE)
+
+
+def _print_preview(result: PreviewResult) -> None:
+    console.print(t("preview.header", operation=result.operation), markup=False)
+    for entry in result.actions:
+        console.print(f"{entry.action}: {entry.path}", markup=False)
+        for key in entry.keys:
+            console.print(f"  {key['action']}: {key['key']}" + (f" ({key['value']})" if "value" in key else ""), markup=False)
+        if entry.diff:
+            console.print(entry.diff, markup=False, end="" if entry.diff.endswith("\n") else "\n")
+    for warning in result.warnings:
+        console.print(warning, markup=False)
+    console.print(t("preview.unchanged"), markup=False)
 
 
 def _resolve_project_root(file: Path) -> Path:
@@ -168,13 +183,18 @@ def _change_language() -> None:
 def init(
     file: Annotated[Path, typer.Option("--file", "-f", help=t("cmd.init.opt_file"))] = COMPOSE_FILE,
     force: Annotated[bool, typer.Option("--force", help=t("cmd.init.opt_force"))] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help=t("preview.option"))] = False,
 ) -> None:
     file = _resolve_cli_compose_file(file)
     try:
-        result = core_init(file, force=force)
+        result = core_init(file, force=force, dry_run=dry_run)
     except RdtError as e:
         console.print(str(e))
         raise typer.Exit(1)
+
+    if isinstance(result, PreviewResult):
+        _print_preview(result)
+        return
 
     console.print(t("msg.compose_created", file=result.file))
     for path in result.created[1:]:
@@ -201,6 +221,7 @@ def add(
     hc_retries: Annotated[Optional[int], typer.Option("--hc-retries", help=t("cmd.add.opt_hc_retries"))] = None,
     hc_start_period: Annotated[Optional[str], typer.Option("--hc-start-period", help=t("cmd.add.opt_hc_start_period"))] = None,
     set_params: Annotated[Optional[list[str]], typer.Option("--set", help=t("cmd.add.opt_set"))] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help=t("preview.option"))] = False,
 ) -> None:
     file = _resolve_cli_compose_file(file)
     service = service.lower()
@@ -220,7 +241,7 @@ def add(
         set_overrides[k.strip()] = v.strip()
 
     has_script_flags = (
-        yes or port is not None or volume is not None or depends_on is not None
+        dry_run or yes or port is not None or volume is not None or depends_on is not None
         or container_name_opt is not None or no_ports or network is not None
         or hc_interval is not None or hc_timeout is not None
         or hc_retries is not None or hc_start_period is not None
@@ -244,6 +265,7 @@ def add(
                 hc_retries=hc_retries,
                 hc_start_period=hc_start_period,
                 set_vars=set_overrides or None,
+                dry_run=dry_run,
             )
         else:
             # Wizard mode remains interactive in the CLI.
@@ -265,6 +287,10 @@ def add(
     except RdtError as e:
         console.print(str(e))
         raise typer.Exit(1)
+
+    if isinstance(result, PreviewResult):
+        _print_preview(result)
+        return
 
     # ── Presentation ──────────────────────────────────────────────────────────
     project_root = _resolve_project_root(file)
@@ -368,6 +394,7 @@ def remove(
     yes: Annotated[bool, typer.Option("--yes", "-y", help=t("cmd.remove.opt_yes"))] = False,
     clean_env: Annotated[bool, typer.Option("--clean-env", help=t("cmd.remove.opt_clean_env"))] = False,
     clean_artifacts: Annotated[bool, typer.Option("--clean-artifacts", help=t("cmd.remove.opt_clean_artifacts"))] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help=t("preview.option"))] = False,
 ) -> None:
     file = _resolve_cli_compose_file(file)
     if not file.exists():
@@ -382,6 +409,9 @@ def remove(
         raise typer.Exit(1)
 
     # ── Service selection (interactive or argument) ──────────────────────────
+    if service is None and dry_run:
+        console.print(t("preview.service_required"))
+        raise typer.Exit(1)
     if service is None:
         from rdt.wizard import ask_remove_service_choice
         service = ask_remove_service_choice(existing)
@@ -399,7 +429,7 @@ def remove(
     console.print(t("remove.header", service=service))
 
     # ── Interactive option questions when --yes is not provided ──────────────
-    if not yes:
+    if not yes and not dry_run:
         from rdt.env_manager import find_orphaned_vars
         from rdt.core import _get_artifact_paths
         project_root = _resolve_project_root(file)
@@ -419,10 +449,14 @@ def remove(
 
     # ── Apply through core ───────────────────────────────────────────────────
     try:
-        result = core_remove(service, file, clean_env=clean_env, clean_artifacts=clean_artifacts)
+        result = core_remove(service, file, clean_env=clean_env, clean_artifacts=clean_artifacts, dry_run=dry_run)
     except RdtError as e:
         console.print(str(e))
         raise typer.Exit(1)
+
+    if isinstance(result, PreviewResult):
+        _print_preview(result)
+        return
 
     # ── Presentation ──────────────────────────────────────────────────────────
     project_root = _resolve_project_root(file)

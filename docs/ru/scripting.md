@@ -362,4 +362,32 @@ rdt check
 rdt up
 ```
 
-При ошибке `add` восстанавливает исходное содержимое и права изменённых файлов и по возможности удаляет новые файлы и пустые каталоги. Если восстановление неполное, ошибка перечисляет затронутые пути. Восстановление выполняется по возможности; сбой процесса и параллельная запись не входят в эту гарантию.
+A failed `add` restores original file bytes and permissions and removes new files and empty directories where possible. Incomplete recovery reports affected paths. Process crashes and concurrent writers are outside this guarantee.
+
+## Preview changes before writing
+
+Use `--dry-run` with `init`, `add`, or `remove` to inspect planned changes without
+writing project files or starting Docker. Preview is noninteractive and uses the
+same defaults and explicit options as script mode:
+
+```bash
+rdt init --file infra/compose.yml --dry-run
+rdt add nginx-proxy --port 8080 --set nginx_upstream=app:9000 --dry-run
+rdt add postgres --hardcore --dry-run
+rdt remove postgres --clean-env --clean-artifacts --dry-run
+```
+
+Removal preview requires a service name. Initialization still requires `--force`
+when its Compose file already exists. Existing companion-file overwrite policies
+also apply to previews. Invalid inputs or rendering failures return an error.
+
+The output lists create/update/delete/skip actions and text diffs for Compose and
+configuration files. Environment files show key actions without their values.
+Known credentials are redacted; credentials that would be randomly generated use
+`<generated>` placeholders. Redaction cannot recognize arbitrary user-authored
+secrets unknown to RDT, so review previews before sharing them.
+
+Run the same command without `--dry-run` to execute it. RDT recalculates changes
+from the current project state and generates real credentials at that time;
+previews are not saved executable plans or reservations.
+

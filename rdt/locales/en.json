@@ -308,6 +308,10 @@
 
   "remove.ask_service": "Which service do you want to remove?",
   "remove.ask_clean_env": "Remove orphaned ENV variables from .env?",
-  "remove.ask_clean_artifacts": "Delete companion files/dirs for this service?"
-}
+  "remove.ask_clean_artifacts": "Delete companion files/dirs for this service?",
 
+  "preview.option": "Preview changes without writing files or starting Docker (noninteractive).",
+  "preview.header": "Preview: {operation}",
+  "preview.unchanged": "No files changed. Run the command without --dry-run to apply; changes are recomputed.",
+  "preview.service_required": "Specify a service when previewing removal."
+}

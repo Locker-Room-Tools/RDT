@@ -308,6 +308,10 @@
 
   "remove.ask_service": "Какой сервис вы хотите удалить?",
   "remove.ask_clean_env": "Удалить осиротевшие ENV-переменные из .env?",
-  "remove.ask_clean_artifacts": "Удалить companion-файлы/директории этого сервиса?"
-}
+  "remove.ask_clean_artifacts": "Удалить companion-файлы/директории этого сервиса?",
 
+  "preview.option": "Показать изменения без записи файлов и запуска Docker (без вопросов).",
+  "preview.header": "Предпросмотр: {operation}",
+  "preview.unchanged": "Файлы не изменены. Уберите --dry-run для выполнения; план будет рассчитан заново.",
+  "preview.service_required": "Укажите сервис для предпросмотра удаления."
+}
