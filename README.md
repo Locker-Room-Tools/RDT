@@ -109,6 +109,18 @@ pip install -e ".[mcp]"
 
 ### Verify installation
 
+If upgrading from the legacy distribution, remove it first to avoid two
+distributions sharing the same files and commands:
+
+```bash
+pip uninstall locker-room-tolls-rdt
+pip install "rdt-rambo[mcp]"
+```
+
+The Python import `rdt` and the `rdt` / `rdt-mcp` commands are unchanged.
+For a pipx installation, uninstall the legacy package with pipx before
+installing `rdt-rambo` with pipx.
+
 ```bash
 rdt --version
 rdt --help
@@ -119,6 +131,9 @@ rdt --help
 ### Publishing a new release to PyPI
 
 > For maintainers only.
+
+Update `rdt/__init__.py` for a release version, and verify ownership of the
+canonical PyPI project before publishing.
 
 ```bash
 # 1. Install build tools

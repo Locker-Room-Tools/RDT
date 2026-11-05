@@ -25,14 +25,15 @@ python -m build
 
 | Purpose | Name |
 |---|---|
-| PyPI package (`pip install ...`) | `rdt-rambo` |
-| `pyproject.toml` name (pip registration) | `locker-room-tolls-rdt` |
+| Distribution (`pip install ...`) | `rdt-rambo` |
 | Python import | `rdt` |
 | CLI command | `rdt` |
 | MCP server command | `rdt-mcp` |
-| `importlib.metadata.version(...)` argument | `"locker-room-tolls-rdt"` |
+| Legacy distribution (metadata fallback only) | `locker-room-tolls-rdt` |
 
-**After `pip install -e .` from source**, the version lookup `version("locker-room-tolls-rdt")` works. After `pip install rdt-rambo` from PyPI it may fail (distribution metadata uses `Name: rdt-rambo`). If you need version at runtime, catch both or fall back to `rdt.__version__`.
+Remove the legacy distribution before installing `rdt-rambo`; both share the
+same import and commands. Runtime lookup prefers canonical metadata, then legacy
+metadata, and finally `rdt.__version__` in a source checkout.
 
 ## Architecture
 
@@ -85,7 +86,8 @@ When `--file` is omitted (or is the literal default `docker-compose.yml`), `_res
 `yaml_manager.py` normalizes healthcheck `test` arrays to inline flow style (`test: [CMD-SHELL, ...]`). If you manually add block-style `test:`, `save_compose()` will convert it.
 
 ### `--version` Uses `importlib.metadata`, Not `rdt.__version__`
-`rdt --version` calls `version("locker-room-tolls-rdt")`. `rdt/__init__.py` has a separate `__version__ = "2.1.1"` that is never read. Bump both when releasing.
+`rdt --version` uses the shared lookup in `rdt/version.py`. Update only
+`rdt/__init__.py` when releasing; setuptools reads that version for metadata.
 
 ### Smart Mapping in Script Mode
 When running `rdt add <admin-tool> --yes`, smart mapping auto-links to the **first** candidate found — no user prompt. This is by design but can produce unexpected links if multiple candidates exist.
