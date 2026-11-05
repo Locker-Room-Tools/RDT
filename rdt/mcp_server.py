@@ -16,6 +16,7 @@ Tools:
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -242,6 +243,7 @@ def rdt_doctor(
 def rdt_check(
     file: str = "docker-compose.yml",
     project_dir: str | None = None,
+    timeout_seconds: float = 120,
 ) -> dict[str, Any]:
     """
     Validate docker-compose.yml syntax via `docker compose config`.
@@ -249,12 +251,15 @@ def rdt_check(
     Args:
         file: Compose file path (default: docker-compose.yml).
         project_dir: Absolute path to the project directory (default: cwd).
+        timeout_seconds: Positive execution deadline in seconds (default: 120).
     """
     try:
-        result = check(_resolve_file(project_dir, file))
-        if result.valid:
-            return {"valid": True}
-        return {"valid": False, "error": result.error}
+        result = check(_resolve_file(project_dir, file), timeout_seconds=timeout_seconds)
+        response = asdict(result)
+        response["valid"] = result.status == "ok"
+        if result.status == "error":
+            response["error"] = result.stderr.strip() or result.stdout.strip() or result.message
+        return response
     except RdtError as e:
         return {"status": "error", "message": str(e)}
 
@@ -264,6 +269,7 @@ def rdt_up(
     file: str = "docker-compose.yml",
     project_dir: str | None = None,
     detach: bool = True,
+    timeout_seconds: float = 120,
 ) -> dict[str, Any]:
     """
     Start the Docker Compose stack.
@@ -273,10 +279,11 @@ def rdt_up(
         file: Compose file path (default: docker-compose.yml).
         project_dir: Absolute path to the project directory (default: cwd).
         detach: Run containers in the background (default: True).
+        timeout_seconds: Positive execution deadline in seconds (default: 120).
     """
     try:
-        result = up(_resolve_file(project_dir, file), detach=detach)
-        return {"command": result.command, "returncode": result.returncode}
+        result = up(_resolve_file(project_dir, file), detach=detach, timeout_seconds=timeout_seconds)
+        return asdict(result)
     except RdtError as e:
         return {"status": "error", "message": str(e)}
 

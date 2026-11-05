@@ -316,54 +316,58 @@ rdt-mcp --help
 
 ### rdt_check
 
-Проверить синтаксис `docker-compose.yml` через `docker compose config`. Обнаруживает ошибки YAML, неизвестные ключи и неверные ссылки.
+Validate `docker-compose.yml` syntax by running `docker compose config`. Detects YAML errors, unknown keys, and invalid references.
 
-| Параметр | Тип | Обязательный | По умолчанию | Описание |
-|----------|-----|:------------:|--------------|----------|
-| `file` | string | нет | `docker-compose.yml` | Путь к compose-файлу |
-| `project_dir` | string | нет | cwd | Абсолютный путь к директории проекта |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|:--------:|---------|-------------|
+| `file` | string | no | `docker-compose.yml` | Compose file path |
+| `project_dir` | string | no | cwd | Absolute path to the project directory |
+| `timeout_seconds` | number | no | `120` | Positive execution deadline in seconds |
 
-**Успешный ответ:**
+**Success response:**
 ```json
-{ "valid": true }
+{ "status": "ok", "valid": true, "command": "docker compose -f docker-compose.yml config", "returncode": 0, "stdout": "...", "stderr": "", "stdout_truncated": false, "stderr_truncated": false, "code": null, "message": null }
 ```
 
-**Ответ при ошибке:**
+**Failure response:**
 ```json
-{ "valid": false, "error": "service \"app\": depends_on.postgres: service not found" }
+{ "status": "error", "valid": false, "code": "command_failed", "returncode": 1, "error": "invalid configuration", "command": "docker compose -f docker-compose.yml config", "stdout": "", "stderr": "invalid configuration", "stdout_truncated": false, "stderr_truncated": false, "message": null }
 ```
 
 ---
 
 ### rdt_up
 
-Запустить Docker Compose стек через `docker compose up`.
+Start the Docker Compose stack via `docker compose up`.
 
-> **Не вызывайте этот инструмент, если пользователь явно не просит запустить стек.**
-> Стандартный сценарий работы агента заканчивается на `rdt_doctor` — пользователь запускает стек самостоятельно.
+> **Do not call this tool unless the user explicitly asks to start the stack.**
+> The standard agent workflow ends with `rdt_doctor` — the user starts the stack themselves.
 
-| Параметр | Тип | Обязательный | По умолчанию | Описание |
-|----------|-----|:------------:|--------------|----------|
-| `file` | string | нет | `docker-compose.yml` | Путь к compose-файлу |
-| `project_dir` | string | нет | cwd | Абсолютный путь к директории проекта |
-| `detach` | boolean | нет | `true` | Запустить контейнеры в фоновом режиме |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|:--------:|---------|-------------|
+| `file` | string | no | `docker-compose.yml` | Compose file path |
+| `project_dir` | string | no | cwd | Absolute path to the project directory |
+| `detach` | boolean | no | `true` | Run containers in the background |
+| `timeout_seconds` | number | no | `120` | Positive execution deadline in seconds |
 
-**Ответ:**
+**Response:**
 ```json
-{ "command": "docker compose -f docker-compose.yml up -d", "returncode": 0 }
+{ "status": "ok", "command": "docker compose -f docker-compose.yml up -d", "returncode": 0, "stdout": "", "stderr": "", "stdout_truncated": false, "stderr_truncated": false, "code": null, "message": null }
 ```
+
+Both Compose tools capture output and return the final 64 KiB of each stream; the corresponding truncation flag indicates omitted output. Failures use `command_failed`, `executable_not_found`, or `timeout` in `code`. A missing executable has a null return code. A timeout terminates the command, but the stack may already have changed; RDT does not retry or undo those changes. Set `timeout_seconds` to a positive number to override the default.
 
 ---
 
-## Формат ответов
+## Response Format
 
-Все инструменты возвращают JSON-объект. Набор полей зависит от инструмента:
+All tools return a JSON object. The fields present depend on the tool:
 
-- **`status`** (`"ok"` / `"error"`) — присутствует, когда операция изменяет состояние (`rdt_init`, `rdt_add`, `rdt_remove`)
-- **`message`** — человекочитаемое описание ошибки, присутствует только когда `status` равен `"error"`
-- Специфичные для каждого инструмента поля полезной нагрузки (см. документацию каждого инструмента выше)
+- **`status`** (`"ok"` / `"error"`) — included when the operation mutates state (`rdt_init`, `rdt_add`, `rdt_remove`)
+- **`message`** — human-readable error description, present only when `status` is `"error"`
+- Tool-specific payload fields (see each tool's documentation above)
 
-Когда `status` равен `"error"`, никакие файлы не были записаны. Поле `message` содержит достаточно контекста для понимания сбоя без инспекции файлов.
+An error from `rdt_up` can occur after the stack has changed. Inspect its diagnostics before taking further action.
 
 ---
 
