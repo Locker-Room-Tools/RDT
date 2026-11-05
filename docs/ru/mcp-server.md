@@ -411,3 +411,25 @@ rdt_doctor()
 rdt_remove("postgres", clean_env=True, clean_artifacts=True)
 rdt_doctor()   # подтвердить что оставшийся стек всё ещё валиден
 ```
+
+
+## Read-only project previews
+
+`rdt_init`, `rdt_add`, and `rdt_remove` accept `dry_run` (default `false`). Set it to
+`true` to return a structured plan without writing files or launching Docker:
+
+```json
+{"service": "postgres", "project_dir": "/path/to/project", "hardcore": true, "dry_run": true}
+```
+
+A successful preview returns `status: "ok"`, `dry_run: true`, `operation`,
+`project_root`, `actions`, and `warnings`. Each action contains `path`, `kind`,
+`action` (`create`, `update`, `delete`, or `skip`), `diff`, and `keys`.
+Environment key entries contain a key and action; credential entries may contain
+a redacted/generated placeholder, never the credential value. File diffs redact
+known credentials; arbitrary unknown secrets may still require manual review.
+
+Ordinary calls without `dry_run` keep their existing behavior. Preview performs
+the same validation, force/overwrite selection, cleanup selection, and default
+Compose-file resolution. Execute a later ordinary call to recompute and apply
+changes; generated credential placeholders are not literal future passwords.

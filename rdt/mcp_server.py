@@ -32,6 +32,7 @@ from rdt.core import (
     remove,
     up,
 )
+from rdt.preview import PreviewResult
 from rdt.yaml_manager import DEFAULT_COMPOSE_FILE, resolve_default_compose_file
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -70,17 +71,21 @@ def rdt_init(
     file: str = "docker-compose.yml",
     force: bool = False,
     project_dir: str | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Initialize a new docker-compose.yml, .env and .env.example in the project directory.
 
     Args:
+        dry_run: Return a read-only, secret-aware plan instead of writing project files.
         file: Compose file name or path (default: docker-compose.yml).
         force: Overwrite existing files if True.
         project_dir: Absolute path to the project directory (default: cwd).
     """
     try:
-        result = init(_resolve_file(project_dir, file), force=force)
+        result = init(_resolve_file(project_dir, file), force=force, dry_run=dry_run)
+        if isinstance(result, PreviewResult):
+            return result.as_dict()
         return {"status": "ok", "file": result.file, "created": result.created}
     except RdtError as e:
         return {"status": "error", "message": str(e)}
@@ -103,11 +108,13 @@ def rdt_add(
     hc_retries: int | None = None,
     hc_start_period: str | None = None,
     set_vars: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Add a service to docker-compose.yml. Always prefer this over editing the file manually.
 
     Args:
+        dry_run: Return a read-only, secret-aware plan instead of writing project files.
         service: Service name (e.g. postgres, redis, nginx-proxy). Use rdt_list to see all options.
         file: Compose file path (default: docker-compose.yml).
         project_dir: Absolute path to the project directory (default: cwd).
@@ -140,7 +147,10 @@ def rdt_add(
             hc_retries=hc_retries,
             hc_start_period=hc_start_period,
             set_vars=set_vars,
+            dry_run=dry_run,
         )
+        if isinstance(result, PreviewResult):
+            return result.as_dict()
         return {
             "status": "ok",
             "service": result.service,
@@ -160,11 +170,13 @@ def rdt_remove(
     project_dir: str | None = None,
     clean_env: bool = False,
     clean_artifacts: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Remove a service from docker-compose.yml.
 
     Args:
+        dry_run: Return a read-only, secret-aware plan instead of writing project files.
         service: Service name to remove.
         file: Compose file path (default: docker-compose.yml).
         project_dir: Absolute path to the project directory (default: cwd).
@@ -177,7 +189,10 @@ def rdt_remove(
             file=_resolve_file(project_dir, file),
             clean_env=clean_env,
             clean_artifacts=clean_artifacts,
+            dry_run=dry_run,
         )
+        if isinstance(result, PreviewResult):
+            return result.as_dict()
         return {
             "status": "ok",
             "removed": result.removed,
