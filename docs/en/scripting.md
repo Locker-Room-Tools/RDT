@@ -392,4 +392,3 @@ secrets unknown to RDT, so review previews before sharing them.
 Run the same command without `--dry-run` to execute it. RDT recalculates changes
 from the current project state and generates real credentials at that time;
 previews are not saved executable plans or reservations.
-

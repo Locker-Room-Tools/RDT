@@ -177,4 +177,3 @@ def _apply_service_script_defaults(preset: ServicePreset, answers: dict[str, Any
         answers.setdefault("traefik_http_redirect", False)
         answers.setdefault("traefik_acme_email", "admin@example.com")
         answers.setdefault("traefik_config_dir", DEFAULT_TRAEFIK_CONFIG_DIR)
-

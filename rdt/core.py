@@ -340,14 +340,12 @@ def _prepare_add(
     # Compose data in memory.
     if file.exists():
         data = load_compose(file)
-        compose_was_new = False
     else:
         net_cfg: dict = {
             "type": answers.get("network_type", "bridge"),
             "name": answers.get("network_name", NETWORK_NAME),
         }
         data = make_base_compose(network_config=net_cfg)
-        compose_was_new = True
 
     env_values = get_env_values(
         preset.default_env,
@@ -438,7 +436,6 @@ def _apply_add(
     project_root = _resolve_root(file)
     env_file = project_root / ".env"
     env_example = project_root / ".env.example"
-    compose_was_new = not file.exists()
     prepared = _prepare_add(preset, answers, file, hardcore)
     data, env_values = prepared.data, prepared.env_values
     scaffold_pipeline, scaffold_plans = prepared.scaffold_pipeline, prepared.scaffold_plans

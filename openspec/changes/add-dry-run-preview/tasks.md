@@ -19,4 +19,4 @@
 ## 4. Integration
 
 - [x] 4.1 Compare preview and actual init/add/remove on paired temporary projects, normalizing only random credentials and roots; verify actions and nonsecret results agree.
-- [ ] 4.2 Run the full suite and OpenSpec validation; verify existing mutation behavior and transactional recovery remain intact.
+- [x] 4.2 Run the full suite and OpenSpec validation; verify existing mutation behavior and transactional recovery remain intact.
