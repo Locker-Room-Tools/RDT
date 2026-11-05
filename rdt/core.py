@@ -7,8 +7,12 @@ Errors are raised as RdtError.
 """
 from __future__ import annotations
 
+import math
+import os
+import signal
 import subprocess
 import stat
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -96,6 +100,67 @@ class ComposeCheckResult:
 class UpResult:
     command: str
     returncode: int
+
+
+@dataclass
+class ExecutionResult:
+    status: str
+    command: str
+    returncode: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    code: str | None = None
+    message: str | None = None
+
+
+_DIAGNOSTIC_LIMIT = 64 * 1024
+
+
+def _diagnostic_tail(stream: Any) -> tuple[str, bool]:
+    size = stream.seek(0, os.SEEK_END)
+    stream.seek(max(0, size - _DIAGNOSTIC_LIMIT))
+    decoded = stream.read().decode("utf-8", errors="replace")
+    encoded = decoded.encode("utf-8")
+    truncated = size > _DIAGNOSTIC_LIMIT or len(encoded) > _DIAGNOSTIC_LIMIT
+    return encoded[-_DIAGNOSTIC_LIMIT:].decode("utf-8", errors="ignore"), truncated
+
+
+def _execute_captured(cmd: list[str], timeout_seconds: float) -> ExecutionResult:
+    """Run a bounded subprocess without exposing child streams to MCP transport."""
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise RdtError("timeout_seconds must be a positive finite number")
+    command = " ".join(cmd)
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(
+                cmd, stdout=stdout, stderr=stderr, start_new_session=(os.name == "posix"),
+            )
+        except FileNotFoundError:
+            return ExecutionResult(status="error", command=command, code="executable_not_found",
+                                   message="Docker executable not found")
+        timed_out = False
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait()
+        out, out_truncated = _diagnostic_tail(stdout)
+        err, err_truncated = _diagnostic_tail(stderr)
+    code = "timeout" if timed_out else "command_failed" if process.returncode else None
+    return ExecutionResult(
+        status="error" if code else "ok", command=command, returncode=process.returncode,
+        stdout=out, stderr=err, stdout_truncated=out_truncated, stderr_truncated=err_truncated,
+        code=code, message="The stack may already have changed." if timed_out else None,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -546,10 +611,13 @@ def doctor(file: Path) -> DoctorResult:
 # core_check
 # ─────────────────────────────────────────────────────────────────────────────
 
-def check(file: Path, verbose: bool = False) -> ComposeCheckResult:
+def check(file: Path, verbose: bool = False, *, timeout_seconds: float | None = None) -> ComposeCheckResult | ExecutionResult:
     """Validate docker-compose.yml through docker compose config."""
     if not file.exists():
         raise RdtError(f"Compose file not found: {file}")
+
+    if timeout_seconds is not None:
+        return _execute_captured(["docker", "compose", "-f", str(file), "config"], timeout_seconds)
 
     result = subprocess.run(
         ["docker", "compose", "-f", str(file), "config"],
@@ -567,7 +635,7 @@ def check(file: Path, verbose: bool = False) -> ComposeCheckResult:
 # core_up
 # ─────────────────────────────────────────────────────────────────────────────
 
-def up(file: Path, detach: bool = True) -> UpResult:
+def up(file: Path, detach: bool = True, *, timeout_seconds: float | None = None) -> UpResult | ExecutionResult:
     """Run docker compose up."""
     if not file.exists():
         raise RdtError(f"Compose file not found: {file}")
@@ -576,5 +644,7 @@ def up(file: Path, detach: bool = True) -> UpResult:
     if detach:
         cmd.append("-d")
 
+    if timeout_seconds is not None:
+        return _execute_captured(cmd, timeout_seconds)
     result = subprocess.run(cmd)
     return UpResult(command=" ".join(cmd), returncode=result.returncode)

@@ -322,15 +322,16 @@ Validate `docker-compose.yml` syntax by running `docker compose config`. Detects
 |-----------|------|:--------:|---------|-------------|
 | `file` | string | no | `docker-compose.yml` | Compose file path |
 | `project_dir` | string | no | cwd | Absolute path to the project directory |
+| `timeout_seconds` | number | no | `120` | Positive execution deadline in seconds |
 
 **Success response:**
 ```json
-{ "valid": true }
+{ "status": "ok", "valid": true, "command": "docker compose -f docker-compose.yml config", "returncode": 0, "stdout": "...", "stderr": "", "stdout_truncated": false, "stderr_truncated": false, "code": null, "message": null }
 ```
 
 **Failure response:**
 ```json
-{ "valid": false, "error": "service \"app\": depends_on.postgres: service not found" }
+{ "status": "error", "valid": false, "code": "command_failed", "returncode": 1, "error": "invalid configuration", "command": "docker compose -f docker-compose.yml config", "stdout": "", "stderr": "invalid configuration", "stdout_truncated": false, "stderr_truncated": false, "message": null }
 ```
 
 ---
@@ -347,11 +348,14 @@ Start the Docker Compose stack via `docker compose up`.
 | `file` | string | no | `docker-compose.yml` | Compose file path |
 | `project_dir` | string | no | cwd | Absolute path to the project directory |
 | `detach` | boolean | no | `true` | Run containers in the background |
+| `timeout_seconds` | number | no | `120` | Positive execution deadline in seconds |
 
 **Response:**
 ```json
-{ "command": "docker compose -f docker-compose.yml up -d", "returncode": 0 }
+{ "status": "ok", "command": "docker compose -f docker-compose.yml up -d", "returncode": 0, "stdout": "", "stderr": "", "stdout_truncated": false, "stderr_truncated": false, "code": null, "message": null }
 ```
+
+Both Compose tools capture output and return the final 64 KiB of each stream; the corresponding truncation flag indicates omitted output. Failures use `command_failed`, `executable_not_found`, or `timeout` in `code`. A missing executable has a null return code. A timeout terminates the command, but the stack may already have changed; RDT does not retry or undo those changes. Set `timeout_seconds` to a positive number to override the default.
 
 ---
 
@@ -363,7 +367,7 @@ All tools return a JSON object. The fields present depend on the tool:
 - **`message`** — human-readable error description, present only when `status` is `"error"`
 - Tool-specific payload fields (see each tool's documentation above)
 
-When `status` is `"error"`, no files have been written. The `message` field contains enough context to understand the failure without inspecting files.
+An error from `rdt_up` can occur after the stack has changed. Inspect its diagnostics before taking further action.
 
 ---
 
