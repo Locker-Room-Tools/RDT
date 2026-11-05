@@ -47,14 +47,21 @@ def known_secrets(root: Path, *mappings: dict[str, Any]) -> set[str]:
     """Collect values classified as credentials without returning them to clients."""
     values: set[str] = set()
 
-    def collect(mapping: dict[str, Any]) -> None:
-        for key, value in mapping.items():
-            if isinstance(value, dict):
-                collect(value)
-            elif is_secret_key(str(key)) and value is not None:
-                text = str(value).strip().strip("\"'")
-                if text and text not in {"<redacted>", "<generated>"} and not text.startswith("${"):
-                    values.add(text)
+    def collect(value: Any, key: str = "") -> None:
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                collect(child_value, str(child_key))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                if isinstance(item, str) and "=" in item:
+                    child_key, _, child_value = item.partition("=")
+                    collect(child_value, child_key)
+                else:
+                    collect(item)
+        elif is_secret_key(key) and value is not None:
+            text = str(value).strip().strip("\"'")
+            if text and text not in {"<redacted>", "<generated>"} and not text.startswith("${"):
+                values.add(text)
 
     env_file = root / ".env"
     if env_file.is_file():
