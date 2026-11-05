@@ -136,7 +136,8 @@ def _execute_captured(cmd: list[str], timeout_seconds: float) -> ExecutionResult
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
             process = subprocess.Popen(
-                cmd, stdout=stdout, stderr=stderr, start_new_session=(os.name == "posix"),
+                cmd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                start_new_session=(os.name == "posix"),
             )
         except FileNotFoundError:
             return ExecutionResult(status="error", command=command, code="executable_not_found",
